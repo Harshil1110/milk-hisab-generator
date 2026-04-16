@@ -7,7 +7,7 @@ const path     = require("path");
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors({ origin: "*" }));
+app.use(cors({ origin: "https://milk-hisab-generator.onrender.com" }));
 app.use(express.json());
 
 // ── API Routes ────────────────────────────────────────────────────────────────
