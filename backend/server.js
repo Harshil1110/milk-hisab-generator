@@ -2,22 +2,26 @@ require("dotenv").config();
 const express  = require("express");
 const mongoose = require("mongoose");
 const cors     = require("cors");
+const path     = require("path");
 
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors({ origin: "*" }));      // tighten to your frontend URL in production
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── API Routes ────────────────────────────────────────────────────────────────
 app.use("/api/auth",      require("./routes/auth"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/entries",   require("./routes/entries"));
 app.use("/api/payments",  require("./routes/payments"));
 app.use("/api/prices",    require("./routes/prices"));
 
-// ── Health check ──────────────────────────────────────────────────────────────
-app.get("/", (req, res) => res.json({ status: "Dairy API running ✓" }));
+// ── Serve Frontend ────────────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
+});
 
 // ── Connect DB & start ────────────────────────────────────────────────────────
 mongoose
