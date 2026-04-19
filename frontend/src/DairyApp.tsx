@@ -186,6 +186,7 @@ const currMonth  = () => new Date().toISOString().slice(0,7);
 const fmtDate    = (d:string) => new Date(d+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 const fmtDay     = (d:string) => new Date(d+"T00:00:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"});
 const fmtRupee   = (n:number) => "₹"+Number(n).toLocaleString("en-IN");
+const getGreeting = () => { const h=new Date().getHours(); return h<12?"Good Morning!":h<17?"Good Afternoon!":"Good Evening!"; };
 
 function calcMonthlyBill(cId:string, entries:MilkEntry[], payments:Payment[]): MonthlyBill {
   const ce=entries.filter(e=>e.customerId===cId);
@@ -233,7 +234,7 @@ function downloadExcel(customers:Customer[],entries:MilkEntry[],payments:Payment
   const me=entries.filter(e=>e.date.startsWith(mp));
 
   // Sheet 1: Monthly Summary
-  const sumRows:(string|number)[][]=[[`Amul Dairy – Monthly Summary: ${monthLabel}`],[],
+  const sumRows:(string|number)[][]=[[`Dhanlaxmi Parlour – Monthly Summary: ${monthLabel}`],[],
     ["Customer","Phone",...MILK_TYPES.map(t=>`${t} (qty)`),...MILK_TYPES.map(t=>`${t} (₹)`),"Milk (₹)","Extra (₹)","Total (₹)","Paid (₹)","Pending (₹)"]];
   let [sm,sp,st,spd,sn]=[0,0,0,0,0];
   customers.forEach(c=>{
@@ -249,7 +250,7 @@ function downloadExcel(customers:Customer[],entries:MilkEntry[],payments:Payment
   XLSX.utils.book_append_sheet(wb,ws1,"Monthly Summary");
 
   // Sheet 2: Daily Entries
-  const entRows:(string|number)[][]=[[`Amul Dairy – Daily Entries (${monthLabel})`],[],
+  const entRows:(string|number)[][]=[[`Dhanlaxmi Parlour – Daily Entries (${monthLabel})`],[],
     ["Date","Customer","Milk Type","Qty","Rate (₹)","Amount (₹)","Extra (₹)"]];
   [...me].sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{
     const cust=customers.find(c=>c.id===e.customerId);
@@ -262,7 +263,7 @@ function downloadExcel(customers:Customer[],entries:MilkEntry[],payments:Payment
   XLSX.utils.book_append_sheet(wb,ws2,"Daily Entries");
 
   // Sheet 3: Customers
-  const custRows:(string|number)[][]=[[`Amul Dairy – Customer Master`],[],
+  const custRows:(string|number)[][]=[[`Dhanlaxmi Parlour – Customer Master`],[],
     ["Name","Phone","Address","Advance (₹)","Default Milk","Month Total (₹)","Paid (₹)","Pending (₹)"]];
   customers.forEach(c=>{
     const bill=calcMonthlyBill(c.id,me,payments);
@@ -273,7 +274,7 @@ function downloadExcel(customers:Customer[],entries:MilkEntry[],payments:Payment
   XLSX.utils.book_append_sheet(wb,ws3,"Customers");
 
   // Sheet 4: Price History
-  const phRows:(string|number)[][]=[[`Amul Dairy – Price History`],[],["Date","Milk Type","Old (₹)","New (₹)","Change"]];
+  const phRows:(string|number)[][]=[[`Dhanlaxmi Parlour – Price History`],[],["Date","Milk Type","Old (₹)","New (₹)","Change"]];
   priceHistory.length===0 ? phRows.push(["No changes recorded","","","",""]) :
     priceHistory.slice().reverse().forEach(s=>{
       (Object.entries(s.changedFrom) as [MilkType,number][]).forEach(([t,op])=>
@@ -388,6 +389,21 @@ export default function App() {
     } catch(err:any) { showToast("❌ "+err.message); }
   };
 
+  const saveEntryForDate = async (cId:string, date:string, draft:DraftEntry) => {
+    try {
+      const saved = await entryAPI.save({
+        customerId: cId, date,
+        milkItems: draft.milkItems.filter(m=>m.qty>0),
+        pettyExpense: draft.pettyExpense,
+        delivered: !draft.skipped,
+      });
+      const newE = ne(saved);
+      setEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===date)), newE]);
+      if (date === entryDate) setDrafts(prev=>({...prev,[cId]:{...draft,saved:true}}));
+      showToast("Entry updated ✓");
+    } catch(err:any) { showToast("❌ "+err.message); }
+  };
+
   const handlePriceUpdate = async (newPrices:Prices) => {
     try {
       const res = await priceAPI.update(newPrices);
@@ -468,7 +484,8 @@ export default function App() {
       {detailView==="monthly-report"&&selCust&&(
         <MonthlyReportPage customer={selCust} entries={entries} payments={payments} prices={prices}
           onBack={()=>setDetailView("customer-detail")} showToast={showToast}
-          onExport={()=>{ downloadCustomerExcel(selCust,entries,payments,prices,monthLabel); showToast("📥 Bill downloaded!"); }}/>
+          onExport={()=>{ downloadCustomerExcel(selCust,entries,payments,prices,monthLabel); showToast("📥 Bill downloaded!"); }}
+          onEditEntry={saveEntryForDate}/>
       )}
 
       {!detailView&&(
@@ -512,7 +529,7 @@ function LoginScreen({onLogin}:{onLogin:(token:string)=>void}) {
     <div className="login-page">
       <div style={{padding:"56px 24px 24px",textAlign:"center"}}>
         <div style={{fontSize:72,marginBottom:16,lineHeight:1}}>🥛</div>
-        <div style={{fontFamily:"'Baloo 2',cursive",fontSize:34,fontWeight:800,color:"var(--gold)"}}>Amul Dairy</div>
+        <div style={{fontFamily:"'Baloo 2',cursive",fontSize:34,fontWeight:800,color:"var(--gold)"}}>Dhanlaxmi Parlour</div>
         <div style={{fontSize:14,color:"rgba(253,230,138,.65)",marginTop:6,fontWeight:500}}>Milk Delivery Management</div>
       </div>
 
@@ -632,7 +649,7 @@ function DailyEntryScreen({customers,prices,drafts,entryDate,onDateChange,onSave
         {skippedCount>0&&<span style={{display:"inline-flex",alignItems:"center",gap:4,background:"var(--gray-l)",borderRadius:100,padding:"4px 12px",fontSize:12,fontWeight:700,color:"var(--gray)"}}>✗ {skippedCount} no milk</span>}
       </div>
 
-      <div className="scroll-area" style={{padding:"8px 16px"}}>
+      <div className="scroll-area" style={{paddingTop:"8px",paddingLeft:"16px",paddingRight:"16px"}}>
         {customers.map((c,i)=>{
           const d=drafts[c.id]??{milkItems:c.defaultMilk.map(m=>({type:m.type,qty:m.qty,price:prices[m.type]})),pettyExpense:0,saved:false,skipped:false};
           const status=!d.saved?"pending":d.skipped?"skipped":"saved";
@@ -798,7 +815,7 @@ function DashboardScreen({customers,entries,savedCount,totalCustomers,onGoEntry}
     <div style={{background:"var(--cream)",minHeight:"100vh"}}>
       <div className="header">
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div><div className="header-title">🥛 Amul Dairy</div><div className="header-sub">{fmtDate(ts)} · Good Morning!</div></div>
+          <div><div className="header-title">🥛 Dhanlaxmi Parlour</div><div className="header-sub">{fmtDate(ts)} · {getGreeting()}</div></div>
           <div style={{background:"rgba(245,158,11,.18)",borderRadius:12,padding:"8px 14px",textAlign:"center"}}>
             <div style={{fontFamily:"'Baloo 2',cursive",fontSize:22,fontWeight:800,color:"var(--gold)"}}>{savedCount}/{totalCustomers}</div>
             <div style={{fontSize:10,color:"rgba(253,230,138,.65)",fontWeight:600}}>TODAY</div>
@@ -812,7 +829,7 @@ function DashboardScreen({customers,entries,savedCount,totalCustomers,onGoEntry}
           <div className="progress"><div className="progress-fill" style={{width:`${pct*100}%`}}/></div>
         </div>
       </div>
-      <div style={{padding:"16px 16px 0"}}>
+      <div style={{padding:"16px 16px 90px"}}>
         {savedCount<totalCustomers&&<button className="btn btn-gold btn-lg slide-up" style={{marginBottom:16}} onClick={onGoEntry}>🚀 Start Today's Entry</button>}
         {savedCount===totalCustomers&&totalCustomers>0&&(<div style={{background:"var(--green-l)",border:"2px solid var(--green)",borderRadius:14,padding:16,marginBottom:16,textAlign:"center"}}><div style={{fontSize:24}}>✅</div><div style={{fontFamily:"'Baloo 2',cursive",fontWeight:700,color:"var(--green)"}}>All entries done for today!</div></div>)}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
@@ -854,7 +871,7 @@ function CustomersScreen({customers,entries,payments,prices,onAdd,onUpdate,onDel
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div className="header-title">👥 Customers</div><div className="header-sub">{customers.length} registered</div></div><button className="btn btn-gold btn-sm" onClick={()=>setAdd(true)}>＋ Add</button></div>
         <div className="search-wrap" style={{marginTop:12}}><span className="search-icon">🔍</span><input className="input search-input" placeholder="Search name or phone…" value={search} onChange={e=>setSearch(e.target.value)} style={{background:"rgba(255,255,255,.12)",color:"var(--cream)",border:"none"}}/></div>
       </div>
-      <div className="scroll-area" style={{padding:"12px 16px"}}>
+      <div className="scroll-area" style={{paddingTop:"12px",paddingLeft:"16px",paddingRight:"16px"}}>
         {filtered.map((c,i)=>{
           const bill=calcMonthlyBill(c.id,entries,payments);
           return (<div key={c.id} className="card slide-up" style={{marginBottom:12,animationDelay:`${i*.04}s`}}>
@@ -924,7 +941,7 @@ function CustomerDetailPage({customer,entries,payments,prices,onBack,onMonthly,o
         <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"none",color:"var(--gold)",fontSize:20,padding:"6px 10px",borderRadius:10,cursor:"pointer"}}>←</button>
         <div><div className="header-title">{customer.name}</div><div className="header-sub">📞 {customer.phone}</div></div>
       </div></div>
-      <div className="scroll-area" style={{padding:"16px"}}>
+      <div className="scroll-area" style={{paddingTop:"16px",paddingLeft:"16px",paddingRight:"16px"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
           <div className="card" style={{padding:14,borderTop:"3px solid var(--gold)"}}><div style={{fontSize:12,color:"var(--gray)",fontWeight:600,marginBottom:4}}>MONTH MILK</div><div style={{fontFamily:"'Baloo 2',cursive",fontSize:20,fontWeight:800}}>{fmtRupee(bill.milkAmount)}</div></div>
           <div className="card" style={{padding:14,borderTop:`3px solid ${bill.pending>0?"var(--red)":"var(--green)"}`}}><div style={{fontSize:12,color:"var(--gray)",fontWeight:600,marginBottom:4}}>{bill.pending>0?"PENDING":"CREDIT"}</div><div style={{fontFamily:"'Baloo 2',cursive",fontSize:20,fontWeight:800,color:bill.pending>0?"var(--red)":"var(--green)"}}>{fmtRupee(Math.abs(bill.pending))}</div></div>
@@ -966,7 +983,7 @@ function CustomerDetailPage({customer,entries,payments,prices,onBack,onMonthly,o
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONTHLY REPORT
 // ═══════════════════════════════════════════════════════════════════════════════
-function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,onExport}:{customer:Customer;entries:MilkEntry[];payments:Payment[];prices:Prices;onBack:()=>void;showToast:(m:string)=>void;onExport:()=>void;}) {
+function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,onExport,onEditEntry}:{customer:Customer;entries:MilkEntry[];payments:Payment[];prices:Prices;onBack:()=>void;showToast:(m:string)=>void;onExport:()=>void;onEditEntry:(cId:string,date:string,draft:DraftEntry)=>Promise<void>;}) {
   const now=new Date(), mp=now.toISOString().slice(0,7);
   const monthName=now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
   const bill=calcMonthlyBill(customer.id,entries,payments);
@@ -974,7 +991,7 @@ function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,on
   const hasMixed=me.some(e=>e.milkItems.some(m=>m.price!==prices[m.type]));
   const handleWA=()=>{
     const lines=(Object.entries(bill.milkTotals) as [MilkType,number][]).map(([t,q])=>{const a=me.reduce((s,e)=>s+e.milkItems.filter(m=>m.type===t).reduce((x,m)=>x+m.qty*m.price,0),0);return `${t}: ${q} pouches = ₹${a}`;}).join("\n");
-    window.open(`https://wa.me/${customer.phone}?text=${encodeURIComponent(`*Monthly Milk Bill - ${monthName}*\nCustomer: ${customer.name}\n\n${lines}${bill.pettyTotal>0?`\nExtra: ₹${bill.pettyTotal}`:""}\n\n*Total: ₹${bill.total}*\nPaid: ₹${bill.paid}\n*Pending: ₹${Math.max(0,bill.pending)}*\n\nAmul Dairy`)}`,"_blank");
+    window.open(`https://wa.me/${customer.phone}?text=${encodeURIComponent(`*Monthly Milk Bill - ${monthName}*\nCustomer: ${customer.name}\n\n${lines}${bill.pettyTotal>0?`\nExtra: ₹${bill.pettyTotal}`:""}\n\n*Total: ₹${bill.total}*\nPaid: ₹${bill.paid}\n*Pending: ₹${Math.max(0,bill.pending)}*\n\nDhanlaxmi Parlour`)}`,"_blank");
   };
   const rows:[string,string,string,boolean][]=[["Milk Amount",fmtRupee(bill.milkAmount),"var(--brown)",false],["Extra Expenses",fmtRupee(bill.pettyTotal),"var(--blue)",false],["Total",fmtRupee(bill.total),"var(--brown)",true],["Paid",fmtRupee(bill.paid),"var(--green)",false],[bill.pending>0?"Pending":"Credit",fmtRupee(Math.abs(bill.pending)),bill.pending>0?"var(--red)":"var(--green)",true]];
   return (
@@ -983,7 +1000,7 @@ function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,on
         <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"none",color:"var(--gold)",fontSize:20,padding:"6px 10px",borderRadius:10,cursor:"pointer"}}>←</button>
         <div><div className="header-title">{customer.name}</div><div className="header-sub">📅 {monthName}</div></div>
       </div></div>
-      <div className="scroll-area" style={{padding:"16px"}}>
+      <div className="scroll-area" style={{paddingTop:"16px",paddingLeft:"16px",paddingRight:"16px"}}>
         {hasMixed&&(<div className="price-banner" style={{marginBottom:14}}><span style={{fontSize:18,flexShrink:0}}>⚡</span><div><div style={{fontWeight:700}}>Price changed mid-month</div><div style={{fontWeight:500,marginTop:2}}>Each day uses the rate active on that day.</div></div></div>)}
         <div className="card" style={{padding:16,marginBottom:12}}>
           <div className="section-title" style={{marginBottom:12}}>🥛 Milk Breakdown</div>
@@ -995,7 +1012,7 @@ function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,on
             </div>);
           })}
         </div>
-        <DayByDay entries={me}/>
+        <DayByDay entries={me} customer={customer} prices={prices} onEditEntry={onEditEntry}/>
         <div className="card" style={{padding:16,marginBottom:12}}>
           <div className="section-title" style={{marginBottom:12}}>💰 Bill Summary</div>
           {rows.map(([label,val,color,bold],i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<4?"1px solid var(--gray-l)":"none"}}>
@@ -1013,8 +1030,18 @@ function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,on
   );
 }
 
-function DayByDay({entries}:{entries:MilkEntry[]}) {
+function DayByDay({entries,customer,prices,onEditEntry}:{entries:MilkEntry[];customer:Customer;prices:Prices;onEditEntry:(cId:string,date:string,draft:DraftEntry)=>Promise<void>}) {
   const [open,setOpen]=useState(false);
+  const [editEntry,setEditEntry]=useState<MilkEntry|null>(null);
+  const [saving,setSaving]=useState(false);
+
+  const handleSave=async(draft:DraftEntry)=>{
+    if(!editEntry) return;
+    setSaving(true);
+    await onEditEntry(customer.id,editEntry.date,draft);
+    setSaving(false); setEditEntry(null);
+  };
+
   return (
     <div className="card" style={{marginBottom:12,overflow:"visible"}}>
       <button onClick={()=>setOpen(p=>!p)} style={{width:"100%",padding:"14px 16px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"'Baloo 2',cursive",fontSize:15,fontWeight:700,color:"var(--brown)"}}>
@@ -1025,10 +1052,15 @@ function DayByDay({entries}:{entries:MilkEntry[]}) {
         {entries.map((e,i)=>{
           const amt=e.milkItems.reduce((a,m)=>a+m.qty*m.price,0)+(e.pettyExpense??0);
           const nm=e.milkItems.every(m=>m.qty===0)||e.milkItems.length===0;
-          return (<div key={e.id} style={{padding:"10px 16px",borderBottom:i<entries.length-1?"1px solid var(--gray-l)":"none",background:nm?"var(--gray-l)":"transparent"}}>
+          return (<div key={e.id} onClick={()=>setEditEntry(e)} style={{padding:"10px 16px",borderBottom:i<entries.length-1?"1px solid var(--gray-l)":"none",background:nm?"var(--gray-l)":"transparent",cursor:"pointer",transition:"background .12s"}}
+            onMouseEnter={el=>(el.currentTarget.style.background=nm?"#e9eaec":"var(--cream2)")}
+            onMouseLeave={el=>(el.currentTarget.style.background=nm?"var(--gray-l)":"transparent")}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontFamily:"'Baloo 2',cursive",fontWeight:600,fontSize:13,color:nm?"var(--gray)":"var(--brown)"}}>{fmtDay(e.date)}</span>
-              {nm?<span style={{fontSize:12,color:"var(--gray)",fontWeight:600}}>No milk</span>:<span style={{fontFamily:"'Baloo 2',cursive",fontWeight:700,color:"var(--brown2)",fontSize:13}}>{fmtRupee(amt)}</span>}
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {nm?<span style={{fontSize:12,color:"var(--gray)",fontWeight:600}}>No milk</span>:<span style={{fontFamily:"'Baloo 2',cursive",fontWeight:700,color:"var(--brown2)",fontSize:13}}>{fmtRupee(amt)}</span>}
+                <span style={{fontSize:11,color:"var(--gray)",fontWeight:600}}>✏️</span>
+              </div>
             </div>
             {!nm&&(<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>
               {e.milkItems.filter(m=>m.qty>0).map((m,j)=><span key={j} style={{fontSize:11,background:"var(--cream2)",borderRadius:6,padding:"2px 7px",fontWeight:600,color:"var(--brown2)",borderLeft:`2px solid ${MILK_COLORS[m.type]}`}}>{m.type}×{m.qty} @₹{m.price}</span>)}
@@ -1037,6 +1069,7 @@ function DayByDay({entries}:{entries:MilkEntry[]}) {
           </div>);
         })}
       </div>)}
+      {editEntry&&(<EntryModal customer={customer} draft={{milkItems:editEntry.milkItems.map(m=>({...m})),pettyExpense:editEntry.pettyExpense??0,saved:true,skipped:editEntry.milkItems.every(m=>m.qty===0)||editEntry.milkItems.length===0}} prices={prices} date={editEntry.date} saving={saving} onSave={handleSave} onClose={()=>setEditEntry(null)}/>)}
     </div>
   );
 }
@@ -1055,7 +1088,7 @@ function ReportsScreen({customers,entries,payments,prices,onCustomerReport,setSe
   return (
     <div style={{background:"var(--cream)",minHeight:"100vh"}}>
       <div className="header"><div className="header-title">📊 Reports</div><div className="header-sub">{mn}</div></div>
-      <div className="scroll-area" style={{padding:"16px"}}>
+      <div className="scroll-area" style={{paddingTop:"16px",paddingLeft:"16px",paddingRight:"16px"}}>
         <button className="xl-btn" style={{marginBottom:16}} onClick={onExportAll}><span style={{fontSize:20}}>📥</span><div style={{textAlign:"left"}}><div>Download Full Monthly Report</div><div style={{fontSize:11,fontWeight:500,opacity:.8}}>All customers · Daily entries · Price history</div></div></button>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
           <div className="card" style={{padding:14,borderTop:"3px solid var(--gold)"}}><div style={{fontSize:11,color:"var(--gray)",fontWeight:600,marginBottom:4}}>MONTH REVENUE</div><div style={{fontFamily:"'Baloo 2',cursive",fontSize:20,fontWeight:800}}>{fmtRupee(mr)}</div></div>
@@ -1089,7 +1122,7 @@ function SettingsScreen({prices,priceHistory,onSave,showToast,onLogout,onExportA
   return (
     <div style={{background:"var(--cream)",minHeight:"100vh"}}>
       <div className="header"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div className="header-title">⚙️ Settings</div><div className="header-sub">Prices & account</div></div><button className="btn btn-ghost btn-sm" style={{color:"var(--red)"}} onClick={onLogout}>Logout 🚪</button></div></div>
-      <div className="scroll-area" style={{padding:"16px"}}>
+      <div className="scroll-area" style={{paddingTop:"16px",paddingLeft:"16px",paddingRight:"16px"}}>
         <button className="xl-btn" style={{marginBottom:16}} onClick={onExportAll}><span style={{fontSize:20}}>📥</span><div style={{textAlign:"left"}}><div>Export Full Report to Excel</div><div style={{fontSize:11,fontWeight:500,opacity:.8}}>Monthly summary · Entries · Customers · Prices</div></div></button>
         <div style={{background:"var(--blue-l)",border:"1.5px solid var(--blue)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:13,color:"var(--blue)"}}>
           <div style={{fontWeight:700,marginBottom:4}}>ℹ️ How price changes work</div>
@@ -1121,7 +1154,7 @@ function SettingsScreen({prices,priceHistory,onSave,showToast,onLogout,onExportA
             </div>))}
           </div>)}
         </div>)}
-        <div className="card" style={{padding:16,textAlign:"center",marginBottom:16}}><div style={{fontSize:40,marginBottom:8}}>🥛</div><div style={{fontFamily:"'Baloo 2',cursive",fontSize:18,fontWeight:700,color:"var(--brown)"}}>Amul Dairy Manager</div><div style={{fontSize:13,color:"var(--gray)",marginTop:4}}>v1.0 · Made for small dairy owners</div></div>
+        <div className="card" style={{padding:16,textAlign:"center",marginBottom:16}}><div style={{fontSize:40,marginBottom:8}}>🥛</div><div style={{fontFamily:"'Baloo 2',cursive",fontSize:18,fontWeight:700,color:"var(--brown)"}}>Dhanlaxmi Parlour Manager</div><div style={{fontSize:13,color:"var(--gray)",marginTop:4}}>v1.0 · Made for small dairy owners</div></div>
         <button className="btn btn-red btn-lg" onClick={onLogout}>🚪 Logout</button>
       </div>
     </div>
