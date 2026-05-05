@@ -332,6 +332,34 @@ export default function App() {
 
   const monthLabel = new Date().toLocaleDateString("en-IN",{month:"long",year:"numeric"});
 
+  const [reportMonth, setReportMonth] = useState(currMonth());
+  const [reportEntries, setReportEntries] = useState<MilkEntry[]>([]);
+  const [reportPayments, setReportPayments] = useState<Payment[]>([]);
+  const [loadingReport, setLoadingReport] = useState(false);
+
+  useEffect(() => {
+    if (reportMonth === currMonth()) {
+      setReportEntries(entries);
+      setReportPayments(payments);
+    }
+  }, [reportMonth, entries, payments]);
+
+  useEffect(() => {
+    if (reportMonth !== currMonth() && screen === "app") {
+      let active = true;
+      setLoadingReport(true);
+      Promise.all([entryAPI.byMonth(reportMonth), paymentAPI.byMonth(reportMonth)])
+        .then(([e, p]) => {
+          if (!active) return;
+          setReportEntries(e.map(ne));
+          setReportPayments(p.map(np));
+        })
+        .catch(console.error)
+        .finally(() => { if (active) setLoadingReport(false); });
+      return () => { active = false; };
+    }
+  }, [reportMonth, screen]);
+
   // ── Load all data ───────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true); setAppError("");
@@ -383,7 +411,12 @@ export default function App() {
         delivered: !draft.skipped,
       });
       const newE = ne(saved);
-      setEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===entryDate)), newE]);
+      if (entryDate.startsWith(currMonth())) {
+        setEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===entryDate)), newE]);
+      }
+      if (entryDate.startsWith(reportMonth) && reportMonth !== currMonth()) {
+        setReportEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===entryDate)), newE]);
+      }
       setDrafts(prev=>({...prev,[cId]:{...draft,saved:true}}));
       showToast("Entry saved ✓");
     } catch(err:any) { showToast("❌ "+err.message); }
@@ -398,7 +431,12 @@ export default function App() {
         delivered: !draft.skipped,
       });
       const newE = ne(saved);
-      setEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===date)), newE]);
+      if (date.startsWith(currMonth())) {
+        setEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===date)), newE]);
+      }
+      if (date.startsWith(reportMonth) && reportMonth !== currMonth()) {
+        setReportEntries(prev=>[...prev.filter(e=>!(e.customerId===cId&&e.date===date)), newE]);
+      }
       if (date === entryDate) setDrafts(prev=>({...prev,[cId]:{...draft,saved:true}}));
       showToast("Entry updated ✓");
     } catch(err:any) { showToast("❌ "+err.message); }
@@ -477,14 +515,14 @@ export default function App() {
 
       {detailView==="customer-detail"&&selCust&&(
         <CustomerDetailPage customer={selCust} entries={entries} payments={payments} prices={prices}
-          onBack={()=>setDetailView(null)} onMonthly={()=>setDetailView("monthly-report")}
+          onBack={()=>setDetailView(null)} onMonthly={()=>{ setReportMonth(currMonth()); setDetailView("monthly-report"); }}
           onPayment={amt=>addPayment(selCust.id,amt)}
           onExport={()=>{ downloadCustomerExcel(selCust,entries,payments,prices,monthLabel); showToast("📥 Bill downloaded!"); }}/>
       )}
       {detailView==="monthly-report"&&selCust&&(
-        <MonthlyReportPage customer={selCust} entries={entries} payments={payments} prices={prices}
-          onBack={()=>setDetailView("customer-detail")} showToast={showToast}
-          onExport={()=>{ downloadCustomerExcel(selCust,entries,payments,prices,monthLabel); showToast("📥 Bill downloaded!"); }}
+        <MonthlyReportPage customer={selCust} entries={reportEntries} payments={reportPayments} prices={prices} reportMonth={reportMonth}
+          onBack={()=>setDetailView(tab==="report" ? null : "customer-detail")} showToast={showToast}
+          onExport={()=>{ downloadCustomerExcel(selCust,reportEntries,reportPayments,prices,new Date(reportMonth+"-01T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"})); showToast("📥 Bill downloaded!"); }}
           onEditEntry={saveEntryForDate}/>
       )}
 
@@ -492,8 +530,8 @@ export default function App() {
         <>
           {tab==="home"      &&<DashboardScreen customers={customers} entries={entries} savedCount={savedCount} totalCustomers={customers.length} onGoEntry={()=>setTab("entry")}/>}
           {tab==="entry"     &&<DailyEntryScreen customers={customers} prices={prices} drafts={drafts} entryDate={entryDate} onDateChange={handleDateChange} onSaveEntry={saveEntry} setDrafts={setDrafts}/>}
-          {tab==="customers" &&<CustomersScreen customers={customers} entries={entries} payments={payments} prices={prices} onAdd={addCustomer} onUpdate={updateCustomer} onDelete={deleteCustomer} onDetail={c=>{setSelCust(c);setDetailView("customer-detail");}} onReport={c=>{setSelCust(c);setDetailView("monthly-report");}} showToast={showToast}/>}
-          {tab==="report"    &&<ReportsScreen customers={customers} entries={entries} payments={payments} prices={prices} onCustomerReport={c=>{setSelCust(c);setDetailView("monthly-report");}} setSelectedCustomer={setSelCust} onExportAll={handleExportAll}/>}
+          {tab==="customers" &&<CustomersScreen customers={customers} entries={entries} payments={payments} prices={prices} onAdd={addCustomer} onUpdate={updateCustomer} onDelete={deleteCustomer} onDetail={c=>{setSelCust(c);setDetailView("customer-detail");}} onReport={c=>{setSelCust(c);setReportMonth(currMonth());setDetailView("monthly-report");}} showToast={showToast}/>}
+          {tab==="report"    &&<ReportsScreen customers={customers} entries={reportEntries} payments={reportPayments} prices={prices} reportMonth={reportMonth} setReportMonth={setReportMonth} loadingReport={loadingReport} onCustomerReport={c=>{setSelCust(c);setDetailView("monthly-report");}} setSelectedCustomer={setSelCust} onExportAll={()=>{ downloadExcel(customers,reportEntries,reportPayments,priceHistory,prices,new Date(reportMonth+"-01T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"})); showToast("📥 Excel downloaded!"); }}/>}
           {tab==="settings"  &&<SettingsScreen prices={prices} priceHistory={priceHistory} onSave={handlePriceUpdate} showToast={showToast} onLogout={handleLogout} onExportAll={handleExportAll}/>}
           <BottomNav tab={tab} setTab={handleTabChange} savedCount={savedCount} total={customers.length}/>
         </>
@@ -983,9 +1021,8 @@ function CustomerDetailPage({customer,entries,payments,prices,onBack,onMonthly,o
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONTHLY REPORT
 // ═══════════════════════════════════════════════════════════════════════════════
-function MonthlyReportPage({customer,entries,payments,prices,onBack,showToast,onExport,onEditEntry}:{customer:Customer;entries:MilkEntry[];payments:Payment[];prices:Prices;onBack:()=>void;showToast:(m:string)=>void;onExport:()=>void;onEditEntry:(cId:string,date:string,draft:DraftEntry)=>Promise<void>;}) {
-  const now=new Date(), mp=now.toISOString().slice(0,7);
-  const monthName=now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+function MonthlyReportPage({customer,entries,payments,prices,reportMonth,onBack,showToast,onExport,onEditEntry}:{customer:Customer;entries:MilkEntry[];payments:Payment[];prices:Prices;reportMonth:string;onBack:()=>void;showToast:(m:string)=>void;onExport:()=>void;onEditEntry:(cId:string,date:string,draft:DraftEntry)=>Promise<void>;}) {
+  const mp=reportMonth, monthName=new Date(mp+"-01T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
   const bill=calcMonthlyBill(customer.id,entries,payments);
   const me=entries.filter(e=>e.customerId===customer.id&&e.date.startsWith(mp)).sort((a,b)=>a.date.localeCompare(b.date));
   const hasMixed=me.some(e=>e.milkItems.some(m=>m.price!==prices[m.type]));
@@ -1077,8 +1114,8 @@ function DayByDay({entries,customer,prices,onEditEntry}:{entries:MilkEntry[];cus
 // ═══════════════════════════════════════════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════════════════════════════════════════
-function ReportsScreen({customers,entries,payments,prices,onCustomerReport,setSelectedCustomer,onExportAll}:{customers:Customer[];entries:MilkEntry[];payments:Payment[];prices:Prices;onCustomerReport:(c:Customer)=>void;setSelectedCustomer:(c:Customer)=>void;onExportAll:()=>void;}) {
-  const now=new Date(),mp=now.toISOString().slice(0,7),mn=now.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+function ReportsScreen({customers,entries,payments,prices,reportMonth,setReportMonth,loadingReport,onCustomerReport,setSelectedCustomer,onExportAll}:{customers:Customer[];entries:MilkEntry[];payments:Payment[];prices:Prices;reportMonth:string;setReportMonth:(m:string)=>void;loadingReport:boolean;onCustomerReport:(c:Customer)=>void;setSelectedCustomer:(c:Customer)=>void;onExportAll:()=>void;}) {
+  const mp=reportMonth, mn=new Date(mp+"-01T00:00:00").toLocaleDateString("en-IN",{month:"long",year:"numeric"});
   const me=entries.filter(e=>e.date.startsWith(mp));
   const mr=me.reduce((a,e)=>a+e.milkItems.reduce((s,m)=>s+m.qty*m.price,0),0);
   const bills=customers.map(c=>({...c,bill:calcMonthlyBill(c.id,entries,payments)})).sort((a,b)=>b.bill.pending-a.bill.pending);
@@ -1087,7 +1124,15 @@ function ReportsScreen({customers,entries,payments,prices,onCustomerReport,setSe
   const mx=Math.max(...Object.values(md).map(v=>v??0),1);
   return (
     <div style={{background:"var(--cream)",minHeight:"100vh"}}>
-      <div className="header"><div className="header-title">📊 Reports</div><div className="header-sub">{mn}</div></div>
+      <div className="header">
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div><div className="header-title">📊 Reports</div><div className="header-sub">{mn}</div></div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {loadingReport && <span className="spin" style={{fontSize:18}}>⏳</span>}
+            <input type="month" className="date-input" style={{width:130,padding:"6px 10px",fontSize:13,background:"rgba(254,243,199,.9)",color:"var(--brown)"}} value={reportMonth} max={currMonth()} onChange={e=>setReportMonth(e.target.value)} />
+          </div>
+        </div>
+      </div>
       <div className="scroll-area" style={{paddingTop:"16px",paddingLeft:"16px",paddingRight:"16px"}}>
         <button className="xl-btn" style={{marginBottom:16}} onClick={onExportAll}><span style={{fontSize:20}}>📥</span><div style={{textAlign:"left"}}><div>Download Full Monthly Report</div><div style={{fontSize:11,fontWeight:500,opacity:.8}}>All customers · Daily entries · Price history</div></div></button>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
